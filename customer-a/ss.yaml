@@ -1,0 +1,154 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: customer-a
+  name: dotcms-customer-a
+spec:
+  selector:
+    matchLabels:
+      app: dotcms
+      fullname: dotcms-customer-a
+  serviceName: dotcms-customer-a  
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: enabled
+      labels:
+        app: dotcms
+        env: prod
+        ver: '22.03'
+        cust: customer-a
+        fullname: dotcms-customer-a
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: dotcms
+        image: dotcms/dotcms:23.01.7_lts_ab21f35d
+        resources:
+          requests:
+            cpu: '.5'
+            memory: 3Gi
+          limits:
+            cpu: '2'
+            memory: 4Gi
+        env:
+          - name: DOT_ES_ENDPOINTS
+            value: https://vpc-dsantos-dotcms-os-lamcrtluzpw32m7n4gdzrtpxqy.ca-central-1.es.amazonaws.com
+          - name: DOT_ES_AUTH_TYPE
+            value: BASIC
+          - name: DOT_ES_AUTH_BASIC_USER
+            value: dsantos
+          - name: DOT_ES_AUTH_BASIC_PASSWORD
+            value: '' # REQUIRED PASSWORD
+          - name: DB_DNSNAME
+            value: rds-k8s-dsantos.cfv6lwb0lbi7.ca-central-1.rds.amazonaws.com
+          - name: DB_BASE_URL
+            value: jdbc:postgresql://rds-k8s-dsantos.cfv6lwb0lbi7.ca-central-1.rds.amazonaws.com/customera_db
+          - name: DB_USERNAME
+            value: customera_db_user
+          - name: DB_PASSWORD
+            value: '' # REQUIRED PASSWORD
+          - name: DOT_INITIAL_ADMIN_PASSWORD
+            value: admin
+          - name: DOT_REINDEX_THREAD_MINIMUM_RUNTIME_IN_SEC
+            value: "120"
+          - name: DOT_DOTGENERATED_DEFAULT_PATH
+            value: shared
+          - name: DOT_DOTCMS_CLUSTER_ID
+            value: customer-a
+          - name: DOT_REINDEX_THREAD_ELASTICSEARCH_BULK_SIZE
+            value: '5'
+          - name: DOT_REINDEX_THREAD_ELASTICSEARCH_BULK_ACTIONS
+            value: '1'
+          - name: DOT_REINDEX_RECORDS_TO_FETCH
+            value: '10'
+          - name: DOT_COOKIES_HTTP_ONLY
+            value: 'false'
+          - name: DOT_SYSTEM_STATUS_API_IP_ACL
+            value: '0.0.0.0/1'
+          - name: DOT_MAIL_SMTP_HOST
+            value: smtp.gmail.com
+          - name: DOT_MAIL_SMTP_USER
+            value: dsantos.smtp@gmail.com
+          - name: DOT_MAIL_SMTP_PASSWORD
+            value: 8PLhedBppmVmfXXFrPmg
+          - name: DOT_MAIL_SMTP_PORT
+            value: '465'
+          - name: DOT_MAIL_SMTP_AUTH
+            value: 'true'
+          - name: DOT_MAIL_SMTP_STARTTLS_ENABLE
+            value: 'true'
+          - name: DOT_MAIL_SMTP_SSL_PROTOCOLS
+            value: 'TLSv1.2'
+          - name: DOT_REMOTE_CALL_SUBNET_BLACKLIST
+            value: "169.254.169.254/32,127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+          - name: DOT_CMS_INDEX_PAGE
+            value: 'index.dot'
+          - name: DOT_REMOTE_CALL_ALLOW_REDIRECTS
+            value: 'true'
+          - name: DOT_URI_NORMALIZATION_FORBIDDEN_REGEX
+            value: '\/\/html\/.*'
+        ports:
+          - containerPort: 8080
+            name: api
+          - containerPort: 8081
+            name: web-insecure
+          - containerPort: 8082
+            name: web-secure
+          - containerPort: 5701
+            name: hazelcast
+        volumeMounts:
+          - name: dotcms-shared
+            mountPath: /data/shared
+          # - name: dotcms-license
+          #   mountPath: /license
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - '/bin/bash'
+              - '-c'
+              - >
+                if [ ! -d /data/shared/assets/.backup ]; then
+                mkdir /data/shared/assets/.backup;
+                fi;
+                ln -s /data/shared/assets/.backup /data/local/dotsecure/backup;
+        startupProbe:
+          exec:
+            command:
+              - curl
+              - -s
+              - http://localhost:8082/api/v1/appconfiguration
+          initialDelaySeconds: 60
+          periodSeconds: 5
+          successThreshold: 1
+          failureThreshold: 18
+          timeoutSeconds: 1
+        livenessProbe:
+          exec:
+            command:
+              - curl
+              - -s
+              - http://localhost:8082/api/v1/appconfiguration
+          initialDelaySeconds: 1
+          periodSeconds: 30
+          successThreshold: 1
+          failureThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+              - curl
+              - -s
+              - http://localhost:8082/api/v1/appconfiguration
+          initialDelaySeconds: 1
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 1
+          timeoutSeconds: 5
+      volumes:
+      - name: dotcms-shared
+        persistentVolumeClaim:
+          claimName: customer-a-prod-efs-pvc
